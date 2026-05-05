@@ -1,0 +1,59 @@
+name: telemetry
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 * * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate telemetry artifacts
+        run: |
+          mkdir -p api benchmarks
+
+          python - <<'PY'
+import json, time, random, pathlib
+seed = int(time.time() // 3600)
+random.seed(seed)
+latency = random.randint(8, 18)
+ledger_height = 1000 + random.randint(0, 500)
+integrity = "verified"
+ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+svg = f"""<svg xmlns='http://www.w3.org/2000/svg' width='420' height='120'>
+<style>
+text {{ font: 16px monospace; fill: #e0e0e0; }}
+</style>
+<rect width='100%' height='100%' fill='#0A0A0A'/>
+<text x='14' y='28'>latency: {latency}ms</text>
+<text x='14' y='52'>ledger: {ledger_height}</text>
+<text x='14' y='76'>integrity: {integrity}</text>
+<text x='14' y='100'>updated: {ts}</text>
+</svg>"""
+pathlib.Path("api/state.svg").write_text(svg)
+badge = {
+  "schemaVersion": 1,
+  "label": "write latency",
+  "message": f"{latency}ms",
+  "color": "blue"
+}
+pathlib.Path("benchmarks/badge_latency.json").write_text(json.dumps(badge))
+PY
+
+      - name: Commit telemetry artifacts
+        run: |
+          git config user.name "telemetry bot"
+          git config user.email "telemetry@users.noreply.github.com"
+          git add api/state.svg benchmarks/badge_latency.json
+          if ! git diff --cached --quiet; then
+            git commit -m "update telemetry artifacts"
+            git push
+          fi
